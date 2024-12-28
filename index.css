@@ -1,0 +1,14 @@
+html {
+    background-color: black;
+}
+
+body {
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+}
+
+canvas {
+    border: solid 1px darkgray;
+}
