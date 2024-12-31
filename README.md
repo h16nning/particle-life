@@ -1,5 +1,6 @@
 ![](screenshot.png)
 
+A quick and dirty WebGL implementation of Tom Mohrs particle life. I made this because the client doesn't run on M-series macs. Check out his [YouTube channel](https://www.youtube.com/@tom-mohr) or the [repo](https://github.com/tom-mohr/particle-life-app) here on GitHub.
 ### Installation
 
 -   clone this repository
