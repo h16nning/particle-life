@@ -16,11 +16,11 @@
 
 In the sidebar there are several config options, for now there are no boundaries implemented. Especially high or low values can cause issues. General recommendations:
 
--   Simulations speed, keep as low as possible, especially with high n, large force or small friction factor. Usually <= 1. Don't input negative values.
+-   Simulations speed should be as low as possible to keep as stable simulation and minimize computation errors, reduce especially with high n, large force or small friction factor. Usually <= 1. Don't input negative values.
 -   Particle count: see above
 -   Particle size: Input any number, number between 2-10 look good. Reduce when particle count is higher, to still make out individual particles.
 -   Max Radius: Max distance that particles can interact with, keep between 0.1 and 0.5 for good looking results. For lower max radius you could increase particle count / force, for higher radius to the opposite
--   Force factor and friction: friction should be higher up to 1x to 100x of force factor to have a calm simulation. Friction needs to be >0. Force can be all always (even negative but with potentially unexpected behavior)
+-   Force factor and friction: If the friction is very chaotic increase friction or reduce the force factor. Friction needs to be >0. Force can be all always (even negative but with potentially unexpected behavior)
 -   Matrix: Input can be any value greater than 0, dont input too high numbers (<100) as it will make the page very slow. Higher numbers will also result in a very chaotic simulation. I like ~8. Click `Save` and then `Reload` to apply.
 
 ### Troubleshooting

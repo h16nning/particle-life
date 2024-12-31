@@ -25,7 +25,7 @@ flat out int v_color;
 flat out float debug;
 
 float force(float r, float a) {
-    const float beta = 0.5f;
+    const float beta = 0.3f;
     if(r < beta) {
         return (r / beta - 1.0f);
     } else if(beta < r && r < 1.0f) {

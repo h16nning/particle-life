@@ -36,16 +36,16 @@ let spaceBarPressed = false;
 const config = {
     MAX_PARTICLES: 32000,
     paused: false,
-    n: 5000,
+    n: 8000,
     m: 6,
     matrix: null,
     rMax: 0.25,
-    friction: 0.2,
-    forceFactor: 20.0,
-    simulationSpeed: 0.2,
+    friction: 1.0,
+    forceFactor: 1.0,
+    simulationSpeed: 1.0,
     zDepth: null,
     zDepthHalf: null,
-    pointSize: 1.5,
+    pointSize: 3,
     reload: reload,
 };
 config.zDepth = 0.75 * config.rMax;
