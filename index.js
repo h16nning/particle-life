@@ -1,43 +1,71 @@
-function makeRandomMatrix() {
-    const rows = [];
-    for (let i = 0; i < m; i++) {
-        const row = [];
-        for (let j = 0; j < m; j++) {
-            row.push(Math.random() * 2 - 1);
-        }
-        rows.push(row);
-    }
-    return rows;
-}
+import {
+    logColorDistribution,
+    makeRandomMatrix,
+    generateParticles,
+} from "./particleSetup.js";
 
-//don't save in game ojbect, just plain consts
-const dt = 0.02;
+import { initUI } from "./ui.js";
+import { initalizeGL } from "./glhelper.js";
+import { loadShaders } from "./shaders/loader.js";
+import { createShader } from "./shaders/helper.js";
+
+const fpsElement = document.querySelector("#fps");
+
 let canvas = null;
 let ctx = null;
 /** @type {WebGL2RenderingContext} */
 let gl = null;
-const n = 2500;
-let m = 8;
-let matrix;
-const radius = 1;
-let rMax = 0.3;
-const frictionHalfLife = 0.04;
-const friction = Math.pow(0.5, dt / frictionHalfLife);
-let forceFactor = 0.005;
-const colors = new Int32Array(n);
-const zDepth = 1;
-const zDepthHalf = zDepth / 2;
-const positionsX = new Float32Array(n);
-const positionsY = new Float32Array(n);
-const positionsZ = new Float32Array(n);
-const velocitiesX = new Float32Array(n);
-const velocitiesY = new Float32Array(n);
-const velocitiesZ = new Float32Array(n);
+let program;
+let transformFeedback;
+let timeUniformLocation;
+let dtUniformLocation;
+let nUniformLocation;
+let zDepthUniformLocation;
+let pointSizeUniformLocation;
+let matrixSizeUniformLocation;
+let rMaxUniformLocation;
+let frictionUniformLocation;
+let forceFactorUniformLocation;
+let colorTextureUniformLocation;
+let matrixTextureUniformLocation;
 
-let gridFactor = 0.5;
-let gridMax = 1 / gridFactor;
-const grid = new Map();
-let useGridPartitioning = true;
+let ui;
+
+let spaceBarPressed = false;
+
+const config = {
+    MAX_PARTICLES: 32000,
+    paused: false,
+    n: 5000,
+    m: 6,
+    matrix: null,
+    rMax: 0.25,
+    friction: 0.2,
+    forceFactor: 20.0,
+    simulationSpeed: 0.2,
+    zDepth: null,
+    zDepthHalf: null,
+    pointSize: 1.5,
+    reload: reload,
+};
+config.zDepth = 0.75 * config.rMax;
+config.zDepthHalf = config.zDepth / 2;
+
+let particles;
+
+let colorBuffer;
+let positionBuffers;
+let velocityBuffers;
+
+let positionAttributeLocation;
+let velocityAttributeLocation;
+
+let renderProgram;
+let renderPositionBuffer;
+let renderColorBuffer;
+let render_u_offset;
+let render_u_zDepth;
+let render_u_pointSize;
 
 let infoCanvas;
 let ictx;
@@ -46,392 +74,554 @@ let ictx;
 let matrixPaths;
 let selectedMatrixPath = [null, null];
 
-function force(r, a) {
-    const beta = 0.3;
-    if (r < beta) {
-        return r / beta - 1;
-    } else if (beta < r && r < 1) {
-        return a * (1 - Math.abs(2 * r - 1 - beta) / (1 - beta));
-    } else {
-        return 0;
-    }
-}
+let shaderSources;
 
-function renderInfo() {
-    infoCanvas = infoCanvas ?? document.getElementById("info");
-    ictx = ictx ?? infoCanvas.getContext("2d");
-
-    //clear canvas
-    ictx.fillStyle = "black";
-    ictx.fillRect(0, 0, infoCanvas.width, infoCanvas.height);
-
-    const xStart = 10;
-    const yStart = 20;
-    const ySpacing = 15;
-    ictx.fillStyle = "white";
-    ictx.font = "13px Arial";
-    //n
-    ictx.fillText("n: " + n, xStart, yStart);
-    //rMax
-    ictx.fillText("rMax: " + rMax, xStart, yStart + ySpacing);
-    //gridFactor
-    ictx.fillText("gridFactor: " + gridFactor, xStart, yStart + 2 * ySpacing);
-    //friction
-    ictx.fillText("friction: " + friction, xStart, yStart + 3 * ySpacing);
-    //forceFactor
-    ictx.fillText("forceFactor: " + forceFactor, xStart, yStart + 4 * ySpacing);
-    //zDepth
-    ictx.fillText("zDepth: " + zDepth, xStart, yStart + 5 * ySpacing);
-
-    ictx.fillText(
-        `Grid partitioning: ${useGridPartitioning}`,
-        xStart,
-        yStart + 6 * ySpacing
-    );
-    //draw a matrix
-    //canvas width is the limiting space here so divide it by m
-    const reserveSpace = 100;
-    const cellSize = (infoCanvas.width - reserveSpace) / m;
-
-    const matrixXStart = reserveSpace;
-    const matrixYStart = yStart + 7 * ySpacing + 100;
-
-    for (let i = 0; i < m; i++) {
-        //same color as in render to know which row is which
-        /*ictx.fillStyle = `hsl(${(360 * i) / m}, 100%, 50%)`;
-        ictx.fillText(i, matrixXStart + i * cellSize, matrixYStart - 5);
-        ictx.fillText(i, matrixXStart - 15, matrixYStart + i * cellSize + 10);*/
-        //no numbers just colors
-        ictx.fillStyle = `hsl(${(360 * i) / m}, 100%, 50%)`;
-        ictx.fillRect(
-            matrixXStart + i * cellSize,
-            matrixYStart - cellSize - 5,
-            cellSize,
-            cellSize
-        );
-        ictx.fillRect(
-            matrixXStart - cellSize - 5,
-            matrixYStart + i * cellSize,
-            cellSize,
-            cellSize
-        );
-        for (let j = 0; j < m; j++) {
-            ictx.fillStyle = `hsl(${
-                (120 * (matrix[i][j] + 1)) / 2
-            }, 100%, 50%)`;
-            const rect = new Path2D();
-            rect.rect(
-                matrixXStart + i * cellSize,
-                matrixYStart + j * cellSize,
-                cellSize,
-                cellSize
-            );
-            ictx.fill(rect);
-
-            if (selectedMatrixPath[0] === i && selectedMatrixPath[1] === j) {
-                ictx.strokeStyle = "white";
-                ictx.lineWidth = 3;
-                ictx.stroke(rect);
-            }
-            matrixPaths[i][j] = rect;
-        }
-    }
-}
-
-function createShader(gl, type, source) {
-    const shader = gl.createShader(type);
-    gl.shaderSource(shader, source);
-    gl.compileShader(shader);
-    if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-        console.error(gl.getShaderInfoLog(shader));
-        gl.deleteShader(shader);
+function linkProgram(p) {
+    ui.log("Linking program...");
+    gl.linkProgram(p);
+    if (!gl.getProgramParameter(p, gl.LINK_STATUS) && !gl.isContextLost()) {
+        ui.error("Error while linking program:", gl.getProgramInfoLog(p));
+        gl.deleteProgram(p);
         return null;
     }
-    return shader;
+    return p;
 }
 
-function webgl() {
-    if (!gl) {
-        console.log("WebGL not supported, exiting");
-        return;
+function initBuffers(gl) {
+    console.log("Array size:", config.MAX_PARTICLES * 3);
+    const positions = new Float32Array(config.MAX_PARTICLES * 3);
+    const velocities = new Float32Array(config.MAX_PARTICLES * 3);
+
+    // Create buffers
+    positionBuffers = [gl.createBuffer(), gl.createBuffer()];
+    velocityBuffers = [gl.createBuffer(), gl.createBuffer()];
+    colorBuffer = gl.createBuffer();
+
+    // Bind and initialize position buffer
+    positionBuffers.forEach((buffer) => {
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, positions, gl.DYNAMIC_DRAW);
+    });
+
+    // Bind and initialize velocity buffer
+    velocityBuffers.forEach((buffer) => {
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, velocities, gl.DYNAMIC_DRAW);
+    });
+
+    // Bind and initialize color buffer
+    gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, particles.colors, gl.DYNAMIC_DRAW);
+
+    // Unbind buffers
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+    transformFeedback = gl.createTransformFeedback();
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, transformFeedback);
+}
+
+function createTexture(gl, data, width, height, internalFormat, format, type) {
+    const texture = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        internalFormat,
+        width,
+        height,
+        0,
+        format,
+        type,
+        data
+    );
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return texture;
+}
+
+function createTextures(gl) {
+    const textureSize = Math.ceil(Math.sqrt(config.n));
+    const textureSize2 = textureSize * textureSize;
+    const positionData = new Float32Array(textureSize2 * 4); // RGBA for positions
+    const colorData = new Uint8Array(textureSize2 * 4); // RGBA for colors
+    const matrixData = new Float32Array(config.m * config.m * 4); // RGBA for matrix
+
+    // Initialize particle data
+    for (let i = 0; i < textureSize2; i++) {
+        positionData[i * 4] = particles.positions.x[i] || 0;
+        positionData[i * 4 + 1] = particles.positions.y[i] || 0;
+        positionData[i * 4 + 2] = particles.positions.z[i] || 0;
+        positionData[i * 4 + 3] = 1.0; // Alpha channel
+
+        colorData[i * 4] = particles.colors[i] * (255 / config.m) || 0;
+        colorData[i * 4 + 1] = particles.colors[i] * (255 / config.m) || 0;
+        colorData[i * 4 + 2] = particles.colors[i] * (255 / config.m) || 0;
+        colorData[i * 4 + 3] = particles.colors[i] * (255 / config.m) || 0;
     }
-    gl.clearColor(0.1, 0, 0, 1);
-    gl.clear(gl.COLOR_BUFFER_BIT, gl.DEPTH_BUFFER_BIT);
 
-    const vertexShaderSource = `#version 300 es
-in vec4 a_position;
-void main() {
-    gl_Position = a_position;
-}`;
-    const fragmentShaderSource = `#version 300 es
-precision highp float;
-out vec4 outColor;
-void main() {
-    outColor = vec4(1.0, 0.0, 0.0, 1.0); // Red color
-}`;
+    // Initialize matrix data
+    for (let i = 0; i < config.m; i++) {
+        for (let j = 0; j < config.m; j++) {
+            matrixData[i * config.m * 4 + j * 4] = config.matrix[i][j];
+            matrixData[i * config.m * 4 + j * 4 + 1] = config.matrix[i][j];
+            matrixData[i * config.m * 4 + j * 4 + 2] = config.matrix[i][j];
+            matrixData[i * config.m * 4 + j * 4 + 3] = 1.0;
+        }
+    }
 
-    const vertexShader = createShader(gl, gl.VERTEX_SHADER, vertexShaderSource);
+    const positionTexture = createTexture(
+        gl,
+        positionData,
+        textureSize,
+        textureSize,
+        gl.RGBA32F,
+        gl.RGBA,
+        gl.FLOAT
+    );
+
+    const colorTexture = createTexture(
+        gl,
+        colorData,
+        textureSize,
+        textureSize,
+        gl.RGBA8,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE
+    );
+
+    const matrixTexture = createTexture(
+        gl,
+        matrixData,
+        config.m * config.m,
+        1,
+        gl.RGBA32F,
+        gl.RGBA,
+        gl.FLOAT
+    );
+
+    return [positionTexture, colorTexture, matrixTexture];
+}
+
+function initProgram(gl) {
+    ui.log("Creating program...");
+    program = gl.createProgram();
+
+    ui.log("Creating shaders...");
+    console.log("Creating shaders...");
+    console.log(shaderSources);
+    const vertexShader = createShader(
+        gl,
+        gl.VERTEX_SHADER,
+        shaderSources.particle.vert,
+        ui
+    );
     const fragmentShader = createShader(
         gl,
         gl.FRAGMENT_SHADER,
-        fragmentShaderSource
+        shaderSources.particle.frag,
+        ui
     );
 
-    const program = gl.createProgram();
+    ui.log("Attaching shaders...");
     gl.attachShader(program, vertexShader);
     gl.attachShader(program, fragmentShader);
-    gl.linkProgram(program);
 
-    if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-        console.error(gl.getProgramInfoLog(program));
-    }
-
-    const positionBuffer = gl.createBuffer();
-    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffer);
-    const positions = [-1.0, -1.0, 1.0, -1.0, -1.0, 1.0, 1.0, 1.0];
-    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions), gl.STATIC_DRAW);
-
-    const positionAttributeLocation = gl.getAttribLocation(
+    ui.log("Transform feedback varyings...");
+    gl.transformFeedbackVaryings(
         program,
-        "a_position"
+        ["v_position", "v_velocity"],
+        gl.SEPARATE_ATTRIBS
     );
-    gl.enableVertexAttribArray(positionAttributeLocation);
-    gl.vertexAttribPointer(positionAttributeLocation, 2, gl.FLOAT, false, 0, 0);
+
+    linkProgram(program);
 
     gl.useProgram(program);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+
+    // Get attribute locations
+    positionAttributeLocation = gl.getAttribLocation(program, "a_position");
+    velocityAttributeLocation = gl.getAttribLocation(program, "a_velocity");
+    const colorAttributeLocation = gl.getAttribLocation(program, "a_color");
+
+    // Enable attributes
+    gl.enableVertexAttribArray(positionAttributeLocation);
+    gl.enableVertexAttribArray(velocityAttributeLocation);
+    gl.enableVertexAttribArray(colorAttributeLocation);
+
+    // Bind position buffer to attribute
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffers[0]);
+    gl.vertexAttribPointer(positionAttributeLocation, 3, gl.FLOAT, false, 0, 0);
+
+    // Bind velocity buffer to attribute
+    gl.bindBuffer(gl.ARRAY_BUFFER, velocityBuffers[0]);
+    gl.vertexAttribPointer(velocityAttributeLocation, 3, gl.FLOAT, false, 0, 0);
+
+    // Bind color buffer to attribute
+    gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+    gl.vertexAttribIPointer(colorAttributeLocation, 1, gl.INT, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, transformFeedback);
 }
 
-function init() {
-    console.log("Game:init");
-    setInterval(loop, 16);
+function initRenderProgram(gl) {
+    const vertexShader = gl.createShader(gl.VERTEX_SHADER);
+    gl.shaderSource(vertexShader, shaderSources.render.vert);
+    gl.compileShader(vertexShader);
 
-    //initialize canvas
-    canvas = document.getElementById("canvas");
+    const fragmentShader = gl.createShader(gl.FRAGMENT_SHADER);
+    gl.shaderSource(fragmentShader, shaderSources.render.frag);
+    gl.compileShader(fragmentShader);
 
-    //ctx = canvas.getContext("2d");
-    gl = canvas.getContext("webgl2");
-    webgl();
+    renderProgram = gl.createProgram();
+    gl.attachShader(renderProgram, vertexShader);
+    gl.attachShader(renderProgram, fragmentShader);
+    gl.linkProgram(renderProgram);
+
+    renderPositionBuffer = gl.createBuffer();
+    renderColorBuffer = gl.createBuffer();
+
+    // Get attribute locations
+    render_u_offset = gl.getUniformLocation(renderProgram, "u_offset");
+    render_u_zDepth = gl.getUniformLocation(renderProgram, "u_zDepth");
+    render_u_pointSize = gl.getUniformLocation(renderProgram, "u_pointSize");
+}
+
+function checkBufferSizes(gl) {
+    // Check position buffer size
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffers[0]);
+    const positionBufferSize = gl.getBufferParameter(
+        gl.ARRAY_BUFFER,
+        gl.BUFFER_SIZE
+    );
+    ui.log("Position buffer size:", positionBufferSize);
+    console.log("Position buffer size:", positionBufferSize);
+
+    // Check velocity buffer size
+    gl.bindBuffer(gl.ARRAY_BUFFER, velocityBuffers[0]);
+    const velocityBufferSize = gl.getBufferParameter(
+        gl.ARRAY_BUFFER,
+        gl.BUFFER_SIZE
+    );
+    ui.log("Velocity buffer size:", velocityBufferSize);
+
+    // Check color buffer size
+    gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+    const colorBufferSize = gl.getBufferParameter(
+        gl.ARRAY_BUFFER,
+        gl.BUFFER_SIZE
+    );
+    console.log("Color buffer size:", colorBufferSize);
+
+    // Unbind the buffer
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+}
+
+function updateBuffers(gl) {
+    // Transfer data to GPU
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffers[0]);
+    gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array([
+            ...particles.positions.x,
+            ...particles.positions.y,
+            ...particles.positions.y,
+        ]),
+        gl.DYNAMIC_DRAW
+    );
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, velocityBuffers[0]);
+    gl.bufferData(
+        gl.ARRAY_BUFFER,
+        new Float32Array([
+            ...particles.velocities.x,
+            ...particles.velocities.y,
+            ...particles.velocities.z,
+        ]),
+        gl.DYNAMIC_DRAW
+    );
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, particles.colors, gl.DYNAMIC_DRAW);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+    checkBufferSizes(gl);
+}
+
+export function init() {
+    ui.log("Initialize...");
+
+    const result = initalizeGL(render, ui);
+    if (!result) {
+        return;
+    } else {
+        [gl, canvas] = result;
+    }
+
+    config.matrix = makeRandomMatrix(config);
+    matrixPaths = new Array(config.m)
+        .fill(null)
+        .map(() => new Array(config.m).fill(null));
+
+    ui.reEvaluateMatrix();
+
+    // Initialize particle data
+    particles = generateParticles(config);
+    logColorDistribution(particles.colors);
+
+    // Set up WebGL
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+    gl.clearColor(0.0, 0.0, 0.0, 1.0);
+    gl.clear(gl.COLOR_BUFFER_BIT, gl.DEPTH_BUFFER_BIT);
+
+    initBuffers(gl);
+
+    initProgram(gl);
+
+    timeUniformLocation = gl.getUniformLocation(program, "u_time");
+    dtUniformLocation = gl.getUniformLocation(program, "u_dt");
+    nUniformLocation = gl.getUniformLocation(program, "u_n");
+    zDepthUniformLocation = gl.getUniformLocation(program, "u_zDepth");
+    pointSizeUniformLocation = gl.getUniformLocation(program, "u_pointSize");
+    matrixSizeUniformLocation = gl.getUniformLocation(program, "u_matrixSize");
+    frictionUniformLocation = gl.getUniformLocation(program, "u_friction");
+    forceFactorUniformLocation = gl.getUniformLocation(
+        program,
+        "u_forceFactor"
+    );
+    rMaxUniformLocation = gl.getUniformLocation(program, "u_rMax");
+    matrixTextureUniformLocation = gl.getUniformLocation(
+        program,
+        "u_matrixTexture"
+    );
+
+    colorTextureUniformLocation = gl.getUniformLocation(
+        program,
+        "u_colorTexture"
+    );
+
+    // Transfer data to GPU
+    updateBuffers(gl);
+
+    initRenderProgram(gl);
+
     return;
+}
 
-    console.log("Game:initializing matrix");
-    matrix = makeRandomMatrix();
-    matrixPaths = new Array(m).fill(null).map(() => new Array(m).fill(null));
+let then = 0;
 
-    console.log("Game:initializing particles");
-    for (let i = 0; i < n; i++) {
-        console.log("Game:initializing particle", i);
-        colors[i] = Math.floor(Math.min(Math.random() * m * 1, m - 1));
-        positionsX[i] = Math.random() * 2 - 1;
-        positionsY[i] = Math.random() * 2 - 1;
-        positionsZ[i] = Math.random() * zDepth - zDepthHalf;
-        velocitiesX[i] = 0;
-        velocitiesY[i] = 0;
-        velocitiesZ[i] = 0;
+let readIndex = 0;
+
+let frameCounter = 0;
+
+function render(now) {
+    if (!gl || gl.isContextLost()) {
+        ui.error("Called render, but no WebGL context available");
+        cancelAnimationFrame(render);
+        return;
+    }
+    if (config.paused) {
+        requestAnimationFrame(render);
+        return;
+    }
+    now *= 0.001; // convert to seconds
+    const deltaTime = now - then; // compute time since last frame
+    then = now; // remember time for next frame
+    const fps = 1 / deltaTime; // compute frames per second
+    frameCounter++;
+    if (frameCounter % 8 === 0) {
+        fpsElement.textContent = fps.toFixed(1);
     }
 
-    renderInfo();
-}
+    const writeIndex = (readIndex + 1) % 2;
+    gl.useProgram(program);
+    gl.uniform1f(timeUniformLocation, performance.now() / 1000);
+    gl.uniform1f(
+        dtUniformLocation,
+        deltaTime *
+            60 *
+            config.simulationSpeed *
+            0.02 *
+            (!spaceBarPressed ? 1 : 4)
+    );
+    gl.uniform1i(nUniformLocation, config.n);
+    gl.uniform1f(zDepthUniformLocation, config.zDepth);
+    gl.uniform1f(pointSizeUniformLocation, config.pointSize);
+    gl.uniform1i(matrixSizeUniformLocation, config.m);
+    gl.uniform1f(frictionUniformLocation, config.friction);
+    gl.uniform1f(forceFactorUniformLocation, config.forceFactor);
+    gl.uniform1f(rMaxUniformLocation, config.rMax);
+    const [positionTexture, colorTexture, matrixTexture] = createTextures(gl);
 
-function loop() {
-    console.log("Game:tick");
-    //tick();
-    //render();
-}
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, colorTexture);
+    gl.uniform1i(colorTextureUniformLocation, 0);
 
-function getCellIndex(x, y, z) {
-    const ix = Math.floor(x / gridFactor);
-    const iy = Math.floor(y / gridFactor);
-    const iz = Math.floor(z / gridFactor);
-    return `${ix},${iy},${iz}`;
-}
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, positionTexture);
+    gl.uniform1i(gl.getUniformLocation(program, "u_positionTexture"), 1);
 
-function assignParticlesToGrid() {
-    grid.clear();
-    for (let i = 0; i < n; i++) {
-        const cellIndex = getCellIndex(
-            positionsX[i],
-            positionsY[i],
-            positionsZ[i]
-        );
-        if (!grid.has(cellIndex)) {
-            grid.set(cellIndex, []);
-        }
-        grid.get(cellIndex).push(i);
+    gl.activeTexture(gl.TEXTURE2);
+    gl.bindTexture(gl.TEXTURE_2D, matrixTexture);
+    gl.uniform1i(matrixTextureUniformLocation, 2);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    gl.disableVertexAttribArray(positionAttributeLocation);
+    gl.disableVertexAttribArray(velocityAttributeLocation);
+
+    gl.bindBufferBase(
+        gl.TRANSFORM_FEEDBACK_BUFFER,
+        0,
+        positionBuffers[writeIndex]
+    );
+    gl.bindBufferBase(
+        gl.TRANSFORM_FEEDBACK_BUFFER,
+        1,
+        velocityBuffers[writeIndex]
+    );
+
+    // Bind the buffers for reading
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffers[readIndex]);
+    gl.vertexAttribPointer(positionAttributeLocation, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(positionAttributeLocation);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, velocityBuffers[readIndex]);
+    gl.vertexAttribPointer(velocityAttributeLocation, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(velocityAttributeLocation);
+
+    //Clear
+    gl.clearColor(0.04, 0.04, 0.05, 1.0);
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    // Start transform feedback
+    gl.beginTransformFeedback(gl.POINTS);
+
+    // Draw
+    gl.drawArrays(gl.POINTS, 0, config.n);
+
+    // End transform feedback
+    gl.endTransformFeedback();
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+    const updatedPositions = new Float32Array(config.n * 3);
+    gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffers[readIndex]);
+    gl.getBufferSubData(gl.ARRAY_BUFFER, 0, updatedPositions);
+    for (let i = 0; i < config.n; i++) {
+        particles.positions.x[i] = updatedPositions[i * 3];
+        particles.positions.y[i] = updatedPositions[i * 3 + 1];
+        particles.positions.z[i] = updatedPositions[i * 3 + 2];
     }
+
+    // Unbind transform feedback buffers
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
+    gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, null);
+    gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 1, null);
+
+    //Delete textures
+    gl.deleteTexture(positionTexture);
+    gl.deleteTexture(colorTexture);
+    gl.deleteTexture(matrixTexture);
+
+    readIndex = writeIndex;
+
+    // Render
+    gl.useProgram(renderProgram);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, renderPositionBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, updatedPositions, gl.DYNAMIC_DRAW);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, renderColorBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, particles.colors, gl.DYNAMIC_DRAW);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, renderPositionBuffer);
+    gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+    gl.enableVertexAttribArray(0);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, renderColorBuffer);
+    gl.vertexAttribPointer(1, 1, gl.INT, false, 0, 0);
+    gl.enableVertexAttribArray(1);
+
+    gl.uniform1f(render_u_zDepth, config.zDepth);
+    gl.uniform1f(render_u_pointSize, config.pointSize);
+
+    gl.uniform3fv(render_u_offset, [-1.0, 0, 0]);
+    gl.drawArrays(gl.POINTS, 0, config.n);
+
+    gl.uniform3fv(render_u_offset, [1.0, 0, 0]);
+    gl.drawArrays(gl.POINTS, 0, config.n);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+
+    requestAnimationFrame(render.bind(this));
 }
 
-function getNeighboringCells(cellIndex) {
-    const [ix, iy, iz] = cellIndex.split(",").map(Number);
-    const neighbors = [];
-    const wrap = (index, max) =>
-        index < -gridMax ? max - 1 : index >= max ? -gridMax : index;
-
-    for (let dx = -1; dx <= 1; dx++) {
-        for (let dy = -1; dy <= 1; dy++) {
-            for (let dz = -1; dz <= 1; dz++) {
-                const wrappedIx = wrap(ix + dx, gridMax);
-                const wrappedIy = wrap(iy + dy, gridMax);
-                const wrappedIz = wrap(iz + dz, gridMax);
-                neighbors.push(`${wrappedIx},${wrappedIy},${wrappedIz}`);
-            }
-        }
+export function clear() {
+    ui.warn("Clearing WebGL context...");
+    var numTextureUnits = gl.getParameter(gl.MAX_TEXTURE_IMAGE_UNITS);
+    for (var unit = 0; unit < numTextureUnits; ++unit) {
+        gl.activeTexture(gl.TEXTURE0 + unit);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+        gl.bindTexture(gl.TEXTURE_CUBE_MAP, null);
     }
-    return neighbors;
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+    gl.bindRenderbuffer(gl.RENDERBUFFER, null);
+    gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+
+    /*gl.deleteTexture(positionTexture);
+    gl.deleteTexture(colorTexture);
+    gl.deleteTexture(matrixTexture);*/
+
+    const buffersToDelete = [
+        positionBuffers[0],
+        positionBuffers[1],
+        velocityBuffers[0],
+        velocityBuffers[1],
+        colorBuffer,
+    ];
+    buffersToDelete.forEach((buffer) => {
+        gl.bindBuffer(gl.ARRAY_BUFFER, buffer);
+        gl.bufferData(gl.ARRAY_BUFFER, 1, gl.STATIC_DRAW);
+        gl.deleteBuffer(buffer);
+    });
+
+    gl.deleteTransformFeedback(transformFeedback);
+
+    ui.log("WebGL context cleared");
+    cancelAnimationFrame(render);
 }
 
-function tick() {
-    assignParticlesToGrid();
+export async function reload() {
+    ui.log("Reloading...");
+    console.log("Reloading...");
 
-    //update velocities
-    for (let i = 0; i < n; i++) {
-        let totalForceX = 0;
-        let totalForceY = 0;
-        let totalForceZ = 0;
-
-        const cellIndex = getCellIndex(
-            positionsX[i],
-            positionsY[i],
-            positionsZ[i]
-        );
-        const neighboringCells = getNeighboringCells(cellIndex);
-        for (const neighborCell of neighboringCells) {
-            if (!grid.has(neighborCell)) continue;
-            for (const j of grid.get(neighborCell)) {
-                if (i === j) continue;
-                let rx = positionsX[j] - positionsX[i];
-                let ry = positionsY[j] - positionsY[i];
-                let rz = positionsZ[j] - positionsZ[i];
-                if (2 - Math.abs(rx) < Math.abs(rx)) {
-                    rx = -Math.sign(rx) * (2 - Math.abs(rx));
-                }
-                if (2 - Math.abs(ry) < Math.abs(ry)) {
-                    ry = -Math.sign(ry) * (2 - Math.abs(ry));
-                }
-                if (zDepth - Math.abs(rz) < Math.abs(rz)) {
-                    rz = -Math.sign(rz) * (zDepth - Math.abs(rz));
-                }
-                const r = Math.sqrt(rx * rx + ry * ry + rz * rz);
-                if (r > 0 && r < rMax) {
-                    const f = force(r / rMax, matrix[colors[i]][colors[j]]);
-                    totalForceX += (rx / r) * f;
-                    totalForceY += (ry / r) * f;
-                    totalForceZ += (rz / r) * f;
-                }
-            }
-        }
-
-        totalForceX *= rMax * forceFactor;
-        totalForceY *= rMax * forceFactor;
-        totalForceZ *= rMax * forceFactor;
-
-        velocitiesX[i] *= friction;
-        velocitiesY[i] *= friction;
-        velocitiesZ[i] *= friction;
-
-        velocitiesX[i] += totalForceX * dt;
-        velocitiesY[i] += totalForceY * dt;
-        velocitiesZ[i] += totalForceZ * dt;
-        //update positions
-        for (let i = 0; i < n; i++) {
-            positionsX[i] += velocitiesX[i] * dt;
-            if (positionsX[i] < -1) {
-                positionsX[i] = 1;
-            } else if (positionsX[i] > 1) {
-                positionsX[i] = -1;
-            }
-            positionsY[i] += velocitiesY[i] * dt;
-            if (positionsY[i] < -1) {
-                positionsY[i] = 1;
-            } else if (positionsY[i] > 1) {
-                positionsY[i] = 1;
-            }
-            positionsZ[i] += velocitiesZ[i] * dt;
-            if (positionsZ[i] < -zDepthHalf) {
-                positionsZ[i] = zDepthHalf;
-            } else if (positionsZ[i] > zDepthHalf) {
-                positionsZ[i] = -zDepthHalf;
-            }
-        }
-    }
+    window.location.reload();
 }
 
-function render() {
-    ctx.fillStyle = "black";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    for (let i = 0; i < n; i++) {
-        const darkness = 1;
-        ctx.beginPath();
-        const f = 1 / (positionsZ[i] + 1);
-        const screenX = (f * positionsX[i] + 1) * 0.5 * canvas.width;
-        const screenY = (f * positionsY[i] + 1) * 0.5 * canvas.height;
-        ctx.arc(screenX, screenY, radius, 0, 2 * Math.PI);
-        ctx.fillStyle = `hsla(${
-            (360 * colors[i]) / m
-        }, 100%, 50%, ${darkness})`;
-        ctx.fill();
-    }
-}
-
-window.addEventListener("load", init);
-
-window.addEventListener("mousedown", (event) => {
-    for (let i = 0; i < m; i++) {
-        for (let j = 0; j < m; j++) {
-            if (
-                ctx.isPointInPath(
-                    matrixPaths[i][j],
-                    event.offsetX,
-                    event.offsetY
-                )
-            ) {
-                selectedMatrixPath = [i, j];
-                console.log("selected matrix path", i, j);
-                //re-render
-                renderInfo();
-            }
-        }
-    }
+window.addEventListener("load", async () => {
+    console.log("Window event: load");
+    ui = initUI(config);
+    shaderSources = await loadShaders();
+    init();
+    requestAnimationFrame(render);
 });
 
 window.addEventListener("keydown", (event) => {
-    if (event.key === "+") {
-        matrix[selectedMatrixPath[0]][selectedMatrixPath[1]] += 0.1;
-        if (matrix[selectedMatrixPath[0]][selectedMatrixPath[1]] > 1) {
-            matrix[selectedMatrixPath[0]][selectedMatrixPath[1]] = 1;
-        }
-        //re-render
-        renderInfo();
-    } else if (event.key === "-") {
-        matrix[selectedMatrixPath[0]][selectedMatrixPath[1]] -= 0.1;
-        if (matrix[selectedMatrixPath[0]][selectedMatrixPath[1]] < -1) {
-            matrix[selectedMatrixPath[0]][selectedMatrixPath[1]] = -1;
-        }
-        //re-render
-        renderInfo();
-    } else if (event.key === "g") {
-        gridFactor += 0.1;
-        gridMax = 1 / gridFactor;
-        renderInfo();
-    } else if (event.key === "f") {
-        //change grid factor
-        gridFactor -= 0.1;
-        gridMax = 1 / gridFactor;
-        renderInfo();
-    } else if (event.key === "r") {
-        rMax += 0.1;
-        renderInfo();
-    } else if (event.key === "e") {
-        rMax -= 0.1;
-        renderInfo();
-    } else if (event.key === "q") {
-        forceFactor *= 0.5;
-        renderInfo();
-    } else if (event.key === "w") {
-        forceFactor *= 2;
-        renderInfo();
-    } else if (event.key === "0") {
-        useGridPartitioning = !useGridPartitioning;
-        renderInfo();
+    if (event.key === " ") {
+        spaceBarPressed = true;
+    }
+});
+
+window.addEventListener("keyup", (event) => {
+    if (event.key === " ") {
+        spaceBarPressed = false;
     }
 });

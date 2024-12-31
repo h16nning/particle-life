@@ -1,14 +1,79 @@
+<!DOCTYPE html>
 <html>
 
 <head>
     <title>Particle Simulator</title>
     <script type="module" src="./index.js"></script>
+
     <link rel="stylesheet" type="text/css" href="./index.css">
 </head>
 
 <body>
-    <canvas id="canvas" width="840" height="840"></canvas>
-    <canvas id="info" width="340" height="840"></canvas>
+    <div id="shell">
+
+        <span id="info">
+            <span>Hold<kbd>space</kbd>for 4x simulation speed</span>
+            <span>Press<kbd>s</kbd>to toggle sidebar</span>
+        </span>
+        <span id="fps">FPS</span>
+        <div id="content">
+            <canvas id="canvas" width="2000" height="1250"></canvas>
+        </div>
+        <div id="sidebar">
+            <h1>Particle Simulator</h1>
+            <sub>A WebGL implementation of <a href="https://github.com/tom-mohr/particle-life-app">Tom Mohrs
+                    Particle
+                    Life</a> by <a href="https://github.com/h16nning">h16nning</a></sub>
+
+            <h2>Controls</h2>
+            <div class="row">
+                <button id="play_pause">Play</button>
+                <button id="save_config">Save</button>
+                <button id="reload">Reload</button>
+            </div>
+
+            <!--simulation speed-->
+            <div class="row">
+                <label for="input_simulationSpeed">Simulation Speed<kbd>z</kbd></label>
+                <input type="number" id="input_simulationSpeed">
+            </div>
+            <!--n-->
+            <div class="row">
+                <label for="input_n">Particle Count<kbd>n</kbd></label>
+                <input type="number" id="input_n">
+            </div>
+            <!--size-->
+            <div class="row">
+                <label for="input_pointSize">Particle Size<kbd>p</kbd></label>
+                <input type="number" id="input_pointSize">
+            </div>
+            <!--rMax-->
+            <div class="row">
+                <label for="input_rMax">Max Radius<kbd>r</kbd></label>
+                <input type="number" id="input_rMax">
+            </div>
+            <!--forceFactor-->
+            <div class="row">
+                <label for="input_forceFactor">Force Factor<kbd>f</kbd></label>
+                <input type="number" id="input_forceFactor">
+            </div>
+            <!--friction-->
+            <div class="row">
+                <label for="input_friction">Friction<kbd>c</kbd></label>
+                <input type="number" id="input_friction">
+            </div>
+            <!--friction-->
+            <div class="row">
+                <label for="input_matrixSize">Matrix Size<kbd>m</kbd></label>
+                <input type="number" id="input_matrixSize">
+            </div>
+
+            <div id="log-wrapper">
+                <div id="log"></div>
+            </div>
+            <div id="matrixDisplay"></div>
+        </div>
+    </div>
 </body>
 
 </html>

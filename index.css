@@ -1,14 +1,312 @@
+:root {
+    --radius-sm: 5px;
+    --radius-md: 10px;
+    --spacing-sm: 5px;
+    --spacing-md: 10px;
+    --color-gray-100: #000000;
+    --color-gray-200: #222222;
+    --color-gray-300: #444444;
+    --color-gray-400: #666666;
+    --color-gray-500: #888888;
+    --color-gray-600: #aaaaaa;
+    --color-gray-700: #cccccc;
+    --color-gray-800: #eeeeee;
+    --color-gray-900: #ffffff;
+
+    --color-primary: #ff6f61;
+
+    --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+        "Helvetica Neue", Arial, sans-serif;
+    --text-color: var(--color-gray-900);
+}
 html {
-    background-color: black;
+    background-color: var(--color-gray-100);
+    height: 100%;
 }
 
 body {
+    margin: 0;
+    width: 100%;
+    height: 100%;
+
+    font-family: var(--font-family);
+    color: var(--text-color);
+}
+
+#shell {
     display: flex;
     flex-direction: row;
     justify-content: space-between;
     align-items: center;
+    width: 100%;
+    height: 100%;
+    padding: 0;
+    overflow: hidden;
 }
 
-canvas {
-    border: solid 1px darkgray;
+#content {
+    box-sizing: border-box;
+    width: 80%;
+    height: 100%;
+
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+
+    padding: var(--spacing-md);
+}
+
+#shell.sidebar-hidden #content {
+    width: 100%;
+}
+
+#canvas {
+    aspect-ratio: 8 / 5;
+
+    border: solid 1px var(--color-gray-200);
+    border-radius: var(--radius-md);
+}
+
+label {
+    font-size: 0.75rem;
+    white-space: nowrap;
+    flex: 1;
+}
+
+#sidebar {
+    position: relative;
+    width: 20%;
+    height: 100%;
+    padding: var(--spacing-md);
+    box-sizing: border-box;
+    background-color: var(--color-gray-200);
+
+    h1 {
+        font-size: 1rem;
+        margin: 0;
+    }
+
+    h2 {
+        font-size: 0.9rem;
+        margin-bottom: var(--spacing-md);
+    }
+
+    sub {
+        font-size: 0.8rem;
+        opacity: 0.8;
+    }
+
+    .row {
+        display: flex;
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: var(--spacing-md);
+    }
+
+    button {
+        padding: var(--spacing-sm) var(--spacing-md);
+        border: none;
+        border-radius: var(--radius-sm);
+
+        background-color: var(--color-gray-300);
+        color: var(--text-color);
+        cursor: pointer;
+
+        flex: 1;
+    }
+
+    button:hover {
+        filter: brightness(1.2);
+    }
+
+    button:not(:last-child),
+    input:not(:last-child),
+    label:not(:last-child) {
+        margin-right: var(--spacing-sm);
+    }
+
+    input {
+        padding: var(--spacing-sm);
+        border: 1px solid var(--color-gray-300);
+        border-radius: var(--radius-sm);
+
+        background-color: var(--color-gray-200);
+        color: var(--text-color);
+        /*shrink as needed while label is visible*/
+        flex: 1;
+        width: 100%;
+    }
+
+    input:hover {
+        background-color: var(--color-gray-300);
+    }
+
+    /*no outline on focus*/
+    input:focus {
+        outline: none;
+        background-color: var(--color-gray-300);
+        border: 1px solid var(--color-gray-400);
+    }
+
+    /* Chrome, Safari, Edge, Opera */
+    input::-webkit-outer-spin-button,
+    input::-webkit-inner-spin-button {
+        -webkit-appearance: none;
+        margin: 0;
+    }
+
+    /* Firefox */
+    input[type="number"] {
+        -moz-appearance: textfield;
+    }
+
+    a {
+        color: var(--color-primary);
+        text-decoration: none;
+    }
+}
+
+#shell.sidebar-hidden #sidebar {
+    display: none;
+}
+
+#fps {
+    position: absolute;
+    top: var(--spacing-md);
+    left: var(--spacing-md);
+    color: white;
+    font: 20px monospace;
+}
+
+#log-wrapper {
+    position: absolute;
+    right: var(--spacing-md);
+    bottom: var(--spacing-md);
+    width: 90%;
+    height: 20vh;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    overflow-y: scroll;
+
+    #log {
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        color: white;
+        font: 10px monospace;
+        text-align: right;
+
+        span {
+            /*wrap even if the word is too long*/
+            word-break: break-all;
+            padding: var(--spacing-sm);
+        }
+
+        span:nth-child(odd) {
+            background-color: var(--color-gray-300);
+        }
+    }
+}
+
+#log-wrapper::after {
+    content: "";
+    position: absolute;
+    top: 0;
+    width: 100%;
+    height: 80px;
+    background: linear-gradient(0deg, #22222200, #222222ff);
+}
+
+kbd {
+    background-color: var(--color-gray-300);
+    border: 1px solid var(--color-gray-400);
+    border-radius: var(--radius-sm);
+    padding: 0 var(--spacing-sm);
+    margin: 0 var(--spacing-sm);
+}
+
+#info {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 20%;
+    padding: var(--spacing-md);
+    display: flex;
+    flex-direction: row;
+    justify-content: space-between;
+
+    color: white;
+    font: 20px monospace;
+
+    span {
+        font-size: 0.75rem;
+    }
+}
+
+#shell.sidebar-hidden #info {
+    right: 0;
+}
+
+#noGL,
+#inactiveTab {
+    position: absolute;
+    width: 80%;
+    color: var(--text-color);
+    font-size: 1.5rem;
+    font-family: monospace;
+    text-align: center;
+}
+
+#shell.sidebar-hidden #noGL,
+#shell.sidebar-hidden #inactiveTab {
+    width: 100%;
+}
+
+#matrixDisplay {
+    /*grid layout*/
+    display: grid;
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    border: solid 1px var(--color-gray-200);
+    overflow: hidden;
+
+    button {
+        font-size: 0;
+        color: white;
+        border: none;
+        border-radius: 0;
+        cursor: pointer;
+        margin-right: 0 !important;
+        padding: 0;
+        box-sizing: border-box;
+    }
+
+    button:hover {
+        filter: none;
+        box-shadow: 0 0 5px 0 rgba(0, 0, 0, 0.5);
+        transform: scale(1.2);
+        border-radius: 10%;
+    }
+
+    button#selected_matrix_cell {
+        outline: 2px solid white;
+        box-shadow: 0 0 5px 0 rgba(0, 0, 0, 0.5);
+        z-index: 10;
+        border-radius: 10%;
+    }
+
+    div {
+        font-size: 0;
+    }
+    div.corner {
+        visibility: hidden;
+        cursor: auto;
+    }
+
+    div.round {
+        border-radius: 50%;
+        cursor: auto;
+    }
 }
