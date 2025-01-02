@@ -174,6 +174,25 @@ label {
     display: none;
 }
 
+#toggleSidebar {
+    display: block;
+    background-color: #44444444;
+    backdrop-filter: blur(4px);
+    color: white;
+    border: 1px solid var(--color-gray-200);
+    content: ">";
+    font-size: 0.75rem;
+    padding: var(--spacing-sm);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    position: absolute;
+    top: var(--spacing-sm);
+    right: calc(20% + var(--spacing-md));
+    z-index: 10;
+}
+#shell.sidebar-hidden #toggleSidebar {
+    right: var(--spacing-sm);
+}
 #fps {
     position: absolute;
     top: var(--spacing-md);

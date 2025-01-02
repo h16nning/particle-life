@@ -14,6 +14,7 @@ export function initUI(config) {
         canvas: document.getElementById("canvas"),
         shell: document.getElementById("shell"),
         sidebar: document.getElementById("sidebar"),
+        toggleSidebar: document.getElementById("toggleSidebar"),
         playPause: document.getElementById("play_pause"),
         reload: document.getElementById("reload"),
         archiveConfig: document.getElementById("archiveConfig"),
@@ -326,6 +327,10 @@ export function initUI(config) {
         },
         false
     );
+
+    ui.toggleSidebar.addEventListener("click", () => {
+        ui.shell.classList.toggle("sidebar-hidden");
+    });
 
     addKeyboardShortcuts(config, { ...ui, setupMatrixDisplay });
 
