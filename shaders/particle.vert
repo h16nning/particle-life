@@ -13,6 +13,7 @@ uniform float u_pointSize;
 uniform float u_friction;
 uniform float u_forceFactor;
 uniform float u_rMax;
+uniform float u_beta;
 uniform sampler2D u_positionTexture;
 uniform sampler2D u_velocityTexture;
 uniform sampler2D u_colorTexture;
@@ -25,11 +26,10 @@ flat out int v_color;
 flat out float debug;
 
 float force(float r, float a) {
-    const float beta = 0.3f;
-    if(r < beta) {
-        return (r / beta - 1.0f);
-    } else if(beta < r && r < 1.0f) {
-        return a * (1.0f - abs(2.0f * r - 1.0f - beta) / (1.0f - beta));
+    if(r < u_beta) {
+        return (r / u_beta - 1.0f);
+    } else if(u_beta < r && r < 1.0f) {
+        return a * (1.0f - abs(2.0f * r - 1.0f - u_beta) / (1.0f - u_beta));
     } else {
         return 0.0f;
     }
@@ -106,7 +106,7 @@ void main() {
     v_velocity = velocity;
     v_color = a_color;
 
-    float f = 1.0f;// / (position.z - u_zDepth);
+    float f = 1.0f; //(position.z - u_zDepth);
     gl_Position = vec4(f * position.x * 0.625f, f * position.y, 1.0f, 1.0f);
 
     if(debug == -1.0f) {

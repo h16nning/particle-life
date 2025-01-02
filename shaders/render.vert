@@ -9,7 +9,6 @@ out vec4 v_color;
 
 void main() {
     float f = 1.0f;// / (a_position.z - u_zDepth);
-        //run position through orthographic projection, apply offset
     vec3 updatedPositions = vec3(f * a_position.x * 0.8f, f * a_position.y, 1.0f) + u_offset * 1.425f;
 
     gl_Position = vec4(updatedPositions, 1.0f);

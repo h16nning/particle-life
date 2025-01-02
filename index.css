@@ -66,7 +66,6 @@ body {
     border: solid 1px var(--color-gray-200);
     border-radius: var(--radius-md);
 }
-
 label {
     font-size: 0.75rem;
     white-space: nowrap;
@@ -80,7 +79,11 @@ label {
     padding: var(--spacing-md);
     box-sizing: border-box;
     background-color: var(--color-gray-200);
+    overflow-y: scroll;
 
+    #top-section {
+        overflow-y: scroll;
+    }
     h1 {
         font-size: 1rem;
         margin: 0;
@@ -179,16 +182,23 @@ label {
     font: 20px monospace;
 }
 
+#sidebar:hover #log-wrapper:not(:hover) {
+    opacity: 0;
+    pointer-events: none;
+}
+
 #log-wrapper {
     position: absolute;
-    right: var(--spacing-md);
-    bottom: var(--spacing-md);
-    width: 90%;
+    right: 0;
+    left: 0;
+    bottom: 0;
     height: 20vh;
     display: flex;
     flex-direction: column;
     justify-content: flex-end;
     overflow-y: scroll;
+    background-color: var(--color-gray-200);
+    transition: opacity 0.3s;
 
     #log {
         display: flex;
@@ -268,6 +278,7 @@ kbd {
     /*grid layout*/
     display: grid;
     width: 100%;
+    max-width: 300px;
     aspect-ratio: 1 / 1;
     border: solid 1px var(--color-gray-200);
     overflow: hidden;
@@ -308,5 +319,29 @@ kbd {
     div.round {
         border-radius: 50%;
         cursor: auto;
+    }
+}
+
+#colorCountDisplay {
+    margin-bottom: var(--spacing-md);
+    border-radius: var(--radius-sm);
+    padding: var(--spacing-md);
+    border: 1px solid var(--color-gray-300);
+
+    h2 {
+        font-size: 1rem;
+        margin: 0;
+    }
+
+    div {
+        height: 1.5rem;
+        padding-left: var(--spacing-sm);
+    }
+
+    span {
+        font-size: 0.75rem;
+        font-weight: bold;
+        line-height: 1.5rem;
+        white-space: nowrap;
     }
 }
