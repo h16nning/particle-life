@@ -2,12 +2,15 @@ import {
     logColorDistribution,
     makeRandomMatrix,
     generateParticles,
-} from "./particleSetup.js";
+    getParticles,
+} from "./particles.js";
 
-import { initUI } from "./ui.js";
+import { initUI, loadConfig } from "./ui.js";
 import { initalizeGL } from "./glhelper.js";
 import { loadShaders } from "./shaders/loader.js";
-import { createShader } from "./shaders/helper.js";
+import { createDebugTextureProgram, createShader } from "./shaders/helper.js";
+import { setupBloom, renderBloom } from "./shaders/bloom/bloom.js";
+import { drawQuad } from "./shaders/bloom/quad.js";
 
 const fpsElement = document.querySelector("#fps");
 
@@ -24,6 +27,7 @@ let zDepthUniformLocation;
 let pointSizeUniformLocation;
 let matrixSizeUniformLocation;
 let rMaxUniformLocation;
+let betaUniformLocation;
 let frictionUniformLocation;
 let forceFactorUniformLocation;
 let colorTextureUniformLocation;
@@ -33,6 +37,7 @@ let ui;
 
 let spaceBarPressed = false;
 
+let savedConfig = null;
 const config = {
     MAX_PARTICLES: 32000,
     paused: false,
@@ -40,18 +45,18 @@ const config = {
     m: 6,
     matrix: null,
     rMax: 0.25,
+    beta: 0.3,
     friction: 1.0,
     forceFactor: 1.0,
     simulationSpeed: 1.0,
+    colorDistribution: 1.5,
     zDepth: null,
     zDepthHalf: null,
     pointSize: 3,
     reload: reload,
 };
-config.zDepth = 0.75 * config.rMax;
+config.zDepth = config.rMax * 2;
 config.zDepthHalf = config.zDepth / 2;
-
-let particles;
 
 let colorBuffer;
 let positionBuffers;
@@ -67,14 +72,12 @@ let render_u_offset;
 let render_u_zDepth;
 let render_u_pointSize;
 
-let infoCanvas;
-let ictx;
-
-//matrix with all paths of the particle matrixes (access them onmouse event isPointinPath)
-let matrixPaths;
-let selectedMatrixPath = [null, null];
-
 let shaderSources;
+
+let bloom = null;
+
+let showDebug = "N";
+let debugProgram;
 
 function linkProgram(p) {
     ui.log("Linking program...");
@@ -111,7 +114,7 @@ function initBuffers(gl) {
 
     // Bind and initialize color buffer
     gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, particles.colors, gl.DYNAMIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, getParticles().colors, gl.DYNAMIC_DRAW);
 
     // Unbind buffers
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
@@ -150,15 +153,15 @@ function createTextures(gl) {
 
     // Initialize particle data
     for (let i = 0; i < textureSize2; i++) {
-        positionData[i * 4] = particles.positions.x[i] || 0;
-        positionData[i * 4 + 1] = particles.positions.y[i] || 0;
-        positionData[i * 4 + 2] = particles.positions.z[i] || 0;
+        positionData[i * 4] = getParticles().positions.x[i] || 0;
+        positionData[i * 4 + 1] = getParticles().positions.y[i] || 0;
+        positionData[i * 4 + 2] = getParticles().positions.z[i] || 0;
         positionData[i * 4 + 3] = 1.0; // Alpha channel
 
-        colorData[i * 4] = particles.colors[i] * (255 / config.m) || 0;
-        colorData[i * 4 + 1] = particles.colors[i] * (255 / config.m) || 0;
-        colorData[i * 4 + 2] = particles.colors[i] * (255 / config.m) || 0;
-        colorData[i * 4 + 3] = particles.colors[i] * (255 / config.m) || 0;
+        colorData[i * 4] = getParticles().colors[i] * (255 / config.m) || 0;
+        colorData[i * 4 + 1] = getParticles().colors[i] * (255 / config.m) || 0;
+        colorData[i * 4 + 2] = getParticles().colors[i] * (255 / config.m) || 0;
+        colorData[i * 4 + 3] = getParticles().colors[i] * (255 / config.m) || 0;
     }
 
     // Initialize matrix data
@@ -324,9 +327,9 @@ function updateBuffers(gl) {
     gl.bufferData(
         gl.ARRAY_BUFFER,
         new Float32Array([
-            ...particles.positions.x,
-            ...particles.positions.y,
-            ...particles.positions.y,
+            ...getParticles().positions.x,
+            ...getParticles().positions.y,
+            ...getParticles().positions.y,
         ]),
         gl.DYNAMIC_DRAW
     );
@@ -335,15 +338,15 @@ function updateBuffers(gl) {
     gl.bufferData(
         gl.ARRAY_BUFFER,
         new Float32Array([
-            ...particles.velocities.x,
-            ...particles.velocities.y,
-            ...particles.velocities.z,
+            ...getParticles().velocities.x,
+            ...getParticles().velocities.y,
+            ...getParticles().velocities.z,
         ]),
         gl.DYNAMIC_DRAW
     );
 
     gl.bindBuffer(gl.ARRAY_BUFFER, colorBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, particles.colors, gl.DYNAMIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, getParticles().colors, gl.DYNAMIC_DRAW);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
@@ -360,16 +363,16 @@ export function init() {
         [gl, canvas] = result;
     }
 
-    config.matrix = makeRandomMatrix(config);
-    matrixPaths = new Array(config.m)
-        .fill(null)
-        .map(() => new Array(config.m).fill(null));
+    if (!config.matrix) {
+        config.matrix = makeRandomMatrix(config);
+    }
 
-    ui.reEvaluateMatrix();
+    ui.setupMatrixDisplay(config);
 
     // Initialize particle data
-    particles = generateParticles(config);
-    logColorDistribution(particles.colors);
+    generateParticles(config);
+    logColorDistribution(getParticles().colors);
+    ui.setupColorCount(getParticles().colors);
 
     // Set up WebGL
     gl.enable(gl.BLEND);
@@ -394,6 +397,8 @@ export function init() {
         "u_forceFactor"
     );
     rMaxUniformLocation = gl.getUniformLocation(program, "u_rMax");
+    betaUniformLocation = gl.getUniformLocation(program, "u_beta");
+
     matrixTextureUniformLocation = gl.getUniformLocation(
         program,
         "u_matrixTexture"
@@ -408,6 +413,15 @@ export function init() {
     updateBuffers(gl);
 
     initRenderProgram(gl);
+
+    bloom = setupBloom(gl, shaderSources, ui);
+
+    debugProgram = createDebugTextureProgram(
+        gl,
+        shaderSources.debugTexture.vert,
+        shaderSources.debugTexture.frag,
+        ui
+    );
 
     return;
 }
@@ -438,6 +452,13 @@ function render(now) {
     }
 
     const writeIndex = (readIndex + 1) % 2;
+
+    //BIND FRAMEBUFFER FOR BLOOM
+
+    gl.bindFramebuffer(gl.FRAMEBUFFER, bloom.sceneFramebuffer);
+
+    //RENDER SCENE
+
     gl.useProgram(program);
     gl.uniform1f(timeUniformLocation, performance.now() / 1000);
     gl.uniform1f(
@@ -455,6 +476,7 @@ function render(now) {
     gl.uniform1f(frictionUniformLocation, config.friction);
     gl.uniform1f(forceFactorUniformLocation, config.forceFactor);
     gl.uniform1f(rMaxUniformLocation, config.rMax);
+    gl.uniform1f(betaUniformLocation, config.beta);
     const [positionTexture, colorTexture, matrixTexture] = createTextures(gl);
 
     gl.activeTexture(gl.TEXTURE0);
@@ -496,7 +518,7 @@ function render(now) {
     gl.enableVertexAttribArray(velocityAttributeLocation);
 
     //Clear
-    gl.clearColor(0.04, 0.04, 0.05, 1.0);
+    gl.clearColor(0.0, 0.0, 0.0, 1.0);
     gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
     // Start transform feedback
@@ -514,9 +536,9 @@ function render(now) {
     gl.bindBuffer(gl.ARRAY_BUFFER, positionBuffers[readIndex]);
     gl.getBufferSubData(gl.ARRAY_BUFFER, 0, updatedPositions);
     for (let i = 0; i < config.n; i++) {
-        particles.positions.x[i] = updatedPositions[i * 3];
-        particles.positions.y[i] = updatedPositions[i * 3 + 1];
-        particles.positions.z[i] = updatedPositions[i * 3 + 2];
+        getParticles().positions.x[i] = updatedPositions[i * 3];
+        getParticles().positions.y[i] = updatedPositions[i * 3 + 1];
+        getParticles().positions.z[i] = updatedPositions[i * 3 + 2];
     }
 
     // Unbind transform feedback buffers
@@ -524,11 +546,6 @@ function render(now) {
     gl.bindTransformFeedback(gl.TRANSFORM_FEEDBACK, null);
     gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 0, null);
     gl.bindBufferBase(gl.TRANSFORM_FEEDBACK_BUFFER, 1, null);
-
-    //Delete textures
-    gl.deleteTexture(positionTexture);
-    gl.deleteTexture(colorTexture);
-    gl.deleteTexture(matrixTexture);
 
     readIndex = writeIndex;
 
@@ -539,7 +556,7 @@ function render(now) {
     gl.bufferData(gl.ARRAY_BUFFER, updatedPositions, gl.DYNAMIC_DRAW);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, renderColorBuffer);
-    gl.bufferData(gl.ARRAY_BUFFER, particles.colors, gl.DYNAMIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, getParticles().colors, gl.DYNAMIC_DRAW);
 
     gl.bindBuffer(gl.ARRAY_BUFFER, renderPositionBuffer);
     gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
@@ -560,7 +577,33 @@ function render(now) {
 
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
 
+    // BLOOM
+    renderBloom(gl, bloom, ui);
+
     requestAnimationFrame(render.bind(this));
+
+    if (showDebug !== "N") {
+        gl.useProgram(debugProgram.program);
+        gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+        gl.uniform1i(
+            gl.getUniformLocation(debugProgram.program, "u_texture"),
+            0
+        );
+
+        gl.activeTexture(gl.TEXTURE0);
+        if (showDebug === "P") {
+            gl.bindTexture(gl.TEXTURE_2D, positionTexture);
+        } else if (showDebug === "C") {
+            gl.bindTexture(gl.TEXTURE_2D, colorTexture);
+        } else if (showDebug === "M") {
+            gl.bindTexture(gl.TEXTURE_2D, matrixTexture);
+        }
+        drawQuad(gl, debugProgram.positionLocation, debugProgram.quadBuffer);
+    }
+    //Delete textures
+    gl.deleteTexture(positionTexture);
+    gl.deleteTexture(colorTexture);
+    gl.deleteTexture(matrixTexture);
 }
 
 export function clear() {
@@ -608,6 +651,13 @@ export async function reload() {
 
 window.addEventListener("load", async () => {
     console.log("Window event: load");
+
+    savedConfig = loadConfig();
+    if (savedConfig) {
+        Object.assign(config, savedConfig);
+        console.log("Loaded config from local storage");
+    }
+    console.log("Config:", config);
     ui = initUI(config);
     shaderSources = await loadShaders();
     init();
@@ -617,11 +667,35 @@ window.addEventListener("load", async () => {
 window.addEventListener("keydown", (event) => {
     if (event.key === " ") {
         spaceBarPressed = true;
+    } else if (event.key === "ArrowRight") {
+        config.zDepth += 0.3;
+        config.zDepthHalf = config.zDepth / 2;
+        ui.log("Z-Depth:", config.zDepth);
+    } else if (event.key === "ArrowLeft") {
+        config.zDepth -= 0.3;
+        config.zDepthHalf = config.zDepth / 2;
+        ui.log("Z-Depth:", config.zDepth);
     }
 });
 
 window.addEventListener("keyup", (event) => {
     if (event.key === " ") {
         spaceBarPressed = false;
+    }
+});
+
+window.addEventListener("keydown", (event) => {
+    if (["P", "C", "M", "N"].includes(event.key)) {
+        showDebug = event.key;
+        console.log("Show debug texture:", showDebug);
+        ui.debug(
+            "Show debug texture: ",
+            {
+                N: "None",
+                P: "Position",
+                C: "Color",
+                M: "Matrix",
+            }[showDebug]
+        );
     }
 });
